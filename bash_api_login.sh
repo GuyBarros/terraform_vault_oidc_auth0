@@ -8,6 +8,7 @@ export OIDC_ROLE="default"
 export REDIRECT_URI="http://localhost:8250/oidc/callback"
 export LISTEN_PORT=8250
 export FILE="test_response"
+export KV_PATH="kv/data/test"
 
 # === FUNCTIONS ===
 
@@ -29,7 +30,7 @@ extract_query_param_encoded() {
 }
 
 # === MAIN LOGIN PROCESS ===
-touch $FILE
+echo "start" > $FILE
 # Get initial mtime
 initial_mtime=$(stat -f "%m" "$FILE" 2>/dev/null || echo 0)
 
@@ -98,6 +99,6 @@ else
 fi
 
 
-export SECRET=$(curl -X "GET"  -H "accept: application/json" -H "X-Vault-Token: $VAULT_TOKEN" -H "X-Vault-Namespace: $VAULT_NAMESPACE" $VAULT_ADDR/v1/kv/data/test)
+export SECRET=$(curl -X "GET"  -H "accept: application/json" -H "X-Vault-Token: $VAULT_TOKEN" -H "X-Vault-Namespace: $VAULT_NAMESPACE" $VAULT_ADDR/v1/$KV_PATH)
 
-echo $SECRET | jq .
+echo $SECRET | jq .data.data
