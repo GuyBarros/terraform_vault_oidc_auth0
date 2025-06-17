@@ -29,7 +29,7 @@ extract_query_param_encoded() {
 }
 
 # === MAIN LOGIN PROCESS ===
-
+touch $FILE
 # Get initial mtime
 initial_mtime=$(stat -f "%m" "$FILE" 2>/dev/null || echo 0)
 
