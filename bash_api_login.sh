@@ -96,3 +96,8 @@ else
   echo "$RESPONSE"
   exit 1
 fi
+
+
+export SECRET=$(curl -X "GET"  -H "accept: application/json" -H "X-Vault-Token: $VAULT_TOKEN" -H "X-Vault-Namespace: $VAULT_NAMESPACE" $VAULT_ADDR/v1/kv/data/test)
+
+echo $SECRET | jq .
