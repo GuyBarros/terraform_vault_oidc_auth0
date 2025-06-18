@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # === CONFIGURATION ===
 export VAULT_ADDR="https://do-not-delete-ever-v2-public-vault-cf6a1d76.5773df81.z1.hashicorp.cloud:8200"
@@ -7,16 +8,9 @@ export OIDC_AUTH_MOUNT="auth0"
 export OIDC_ROLE="default"
 export REDIRECT_URI="http://localhost:8250/oidc/callback"
 export LISTEN_PORT=8250
-export FILE="test_response"
 export KV_PATH="kv/data/test"
 
 # === FUNCTIONS ===
-
-# Listen for the OIDC redirect
-start_callback_listener() {
-  echo "Listening on http://localhost:$LISTEN_PORT/oidc/callback..."
-  nc -l "$LISTEN_PORT" > "$FILE" &
-}
 
 # Extract and clean a query parameter from a URL
 extract_query_param_encoded() {
@@ -29,14 +23,31 @@ extract_query_param_encoded() {
     | tr -d '\n\r[:space:]'
 }
 
-# === MAIN LOGIN PROCESS ===
-echo "start" > $FILE
-# Get initial mtime
-initial_mtime=$(stat -f "%m" "$FILE" 2>/dev/null || echo 0)
+# Start listener using netcat and capture single line from callback
+start_callback_listener() {
+  echo "[🔄] Waiting for OIDC callback on http://localhost:$LISTEN_PORT/oidc/callback ..."
 
-# Step 1: Start OIDC login flow
-start_callback_listener
-echo "[1] Requesting OIDC auth URL..."
+  # Use a named pipe
+  PIPE=$(mktemp -u)
+  mkfifo "$PIPE"
+
+  # Start netcat in background, redirecting to the pipe
+  nc -l "$LISTEN_PORT" > "$PIPE" &
+  NC_PID=$!
+
+  # Read only the first line (GET /oidc/callback?code=...&state=... HTTP/1.1)
+  IFS= read -r CALLBACK_LINE < "$PIPE"
+
+  # Cleanup
+  rm "$PIPE"
+  kill "$NC_PID" 2>/dev/null
+
+  echo "$CALLBACK_LINE"
+}
+
+# === MAIN LOGIN PROCESS ===
+
+echo "[1] Requesting OIDC login URL from Vault..."
 LOGIN_REQ=$(curl -s --request POST \
   --header "X-Vault-Namespace: $VAULT_NAMESPACE" \
   --data '{"role":"'"$OIDC_ROLE"'","redirect_uri":"'"$REDIRECT_URI"'"}' \
@@ -53,35 +64,26 @@ echo "[2] Open the following URL in your browser:"
 echo "$AUTH_URL"
 xdg-open "$AUTH_URL" 2>/dev/null || open "$AUTH_URL" || echo "↪️ Please open it manually."
 
-# Step 3: Wait for callback to hit local listener
-echo "[3] Waiting for login redirect..."
-while true; do
-  current_mtime=$(stat -f "%m" "$FILE")
-  if [[ "$current_mtime" -ne "$initial_mtime" ]]; then
-    echo "✅ Callback received!"
-    break
-  fi
-  sleep 1
-done
-sleep 1
+# Step 3: Wait for login redirect
+CALLBACK_LINE=$(start_callback_listener)
+
 # Step 4: Parse response
 echo "[4] Extracting code/state/nonce..."
-LINE=$(grep 'GET /oidc/callback' "$FILE")
-CODE=$(extract_query_param_encoded "$LINE" "code")
-STATE=$(extract_query_param_encoded "$LINE" "state")
-NONCE=$(extract_query_param_encoded "$AUTH_URL" "nonce")
-sleep 1
+CODE=$(extract_query_param_encoded "$CALLBACK_LINE" "code")
+STATE=$(extract_query_param_encoded "$CALLBACK_LINE" "state")
+#NONCE=$(extract_query_param_encoded "$AUTH_URL" "nonce")
+
 echo "→ Code:  $CODE"
 echo "→ State: $STATE"
-echo "→ Nonce: $NONCE"
-sleep 1
+#echo "→ Nonce: $NONCE"
+
 # Step 5: Build callback URL
 CALLBACK_URL="$VAULT_ADDR/v1/auth/$OIDC_AUTH_MOUNT/oidc/callback?state=$STATE&code=$CODE"
 echo "[5] Callback URL:"
 echo "$CALLBACK_URL"
-sleep 1
-# Optional: complete login by calling the callback
-echo "[6] Completing login..."
+
+# Step 6: Complete login
+echo "[6] Exchanging code for Vault token..."
 RESPONSE=$(curl -s --request GET \
   --header "X-Vault-Namespace: $VAULT_NAMESPACE" \
   "$CALLBACK_URL")
@@ -97,7 +99,6 @@ else
   echo "$RESPONSE"
   exit 1
 fi
-
 
 export SECRET=$(curl -X "GET"  -H "accept: application/json" -H "X-Vault-Token: $VAULT_TOKEN" -H "X-Vault-Namespace: $VAULT_NAMESPACE" $VAULT_ADDR/v1/$KV_PATH)
 
