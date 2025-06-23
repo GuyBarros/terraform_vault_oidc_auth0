@@ -81,10 +81,10 @@ get_vault() {
   fi
 
   echo "[2] Open the following URL in your browser:"
-  echo "$AUTH_URL"
-  xdg-open "$AUTH_URL" 2>/dev/null || open "$AUTH_URL" || echo "↪️ Please open it manually."
-
-  CALLBACK_LINE=$(start_callback_listener)
+  # echo "$AUTH_URL"
+  # xdg-open "$AUTH_URL" 2>/dev/null || open "$AUTH_URL" || echo "↪️ Please open it manually."
+  # CALLBACK_LINE=$(start_callback_listener)
+ open "$AUTH_URL" && CALLBACK_LINE=$(start_callback_listener)
 
   echo "[3] Extracting values from callback..."
   CODE=$(extract_query_param_encoded "$CALLBACK_LINE" "code")
@@ -123,3 +123,11 @@ get_vault() {
 
 # === CALL FUNCTION ===
 get_vault "$@"
+
+
+# Example usage:
+#./get_vault.sh \
+#  --namespace admin \
+#  --role default \
+#  --path kv/data/test \
+#  --path kv/data/test
